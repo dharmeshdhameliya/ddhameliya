@@ -3,6 +3,12 @@ import pandas as pd
 import yfinance as yf
 from datetime import timedelta
 
+# Define valid usernames and passwords
+USER_CREDENTIALS = {
+    "1": "1",  # Replace with your desired username and password
+    "22": "22"
+}
+
 def fetch_stock_data(symbol, start_date, end_date):
     """
     Fetch stock data from Yahoo Finance between start_date and end_date.
@@ -84,51 +90,72 @@ def process_data(df):
 
     return results_df, all_results, max_trading_day_yes
 
-def main():
-    st.title("Stock Data Processor")
+def sidebar_login():
+    """
+    Sidebar login page for the Streamlit app.
+    """
+    st.sidebar.title("Login")
 
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
 
-    if uploaded_file is not None:
-        # Read the CSV file
-        df = pd.read_csv(uploaded_file, parse_dates=['date'], dayfirst=True)
-
-        # Process the data
-        results_df, all_results, max_trading_day_yes = process_data(df)
-
-        # Display results
-        st.write("Processed Data:")
-        st.dataframe(results_df)
-
-        # Display results and percentages
-        if max_trading_day_yes:
-            st.write(f"100% Yes results achieved on Trading Day {max_trading_day_yes}")
+    if st.sidebar.button("Login"):
+        if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.sidebar.success("Login successful!")
         else:
-            st.write("100% Yes results not achieved within 10 trading days")
+            st.sidebar.error("Invalid username or password. Please try again.")
 
-        # Show Trading Day Results
-        st.write("Trading Day Results:")
-        for i in range(10):
-            trading_day_index = f'trading_day_{i + 1}'
-            day_results = all_results[trading_day_index]
-            total_results = day_results['Yes'] + day_results['No']
-            yes_percentage = (day_results['Yes'] / total_results * 100) if total_results > 0 else 0
-            no_percentage = (day_results['No'] / total_results * 100) if total_results > 0 else 0
+def main():
+    if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+        sidebar_login()
+    else:
+        st.title("Stock Data Processor")
 
-            st.write(f"Trading Day {i + 1}:")
-            st.write(f"  Total Yes: {day_results['Yes']}")
-            st.write(f"  Total No: {day_results['No']}")
-            st.write(f"  Yes Percentage: {yes_percentage:.2f}%")
-            st.write(f"  No Percentage: {no_percentage:.2f}%")
+        # Main page content
+        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
-        # Convert DataFrame to CSV for download
-        csv = results_df.to_csv(index=False)
-        st.download_button(
-            label="Download results as CSV",
-            data=csv,
-            file_name='processed_stock_data.csv',
-            mime='text/csv'
-        )
+        if uploaded_file is not None:
+            # Read the CSV file
+            df = pd.read_csv(uploaded_file, parse_dates=['date'], dayfirst=True)
+
+            # Process the data
+            results_df, all_results, max_trading_day_yes = process_data(df)
+
+            # Display results
+            st.write("Processed Data:")
+            st.dataframe(results_df)
+
+            # Display results and percentages
+            if max_trading_day_yes:
+                st.write(f"100% Yes results achieved on Trading Day {max_trading_day_yes}")
+            else:
+                st.write("100% Yes results not achieved within 10 trading days")
+
+            # Show Trading Day Results
+            st.write("Trading Day Results:")
+            for i in range(10):
+                trading_day_index = f'trading_day_{i + 1}'
+                day_results = all_results[trading_day_index]
+                total_results = day_results['Yes'] + day_results['No']
+                yes_percentage = (day_results['Yes'] / total_results * 100) if total_results > 0 else 0
+                no_percentage = (day_results['No'] / total_results * 100) if total_results > 0 else 0
+
+                st.write(f"Trading Day {i + 1}:")
+                st.write(f"  Total Yes: {day_results['Yes']}")
+                st.write(f"  Total No: {day_results['No']}")
+                st.write(f"  Yes Percentage: {yes_percentage:.2f}%")
+                st.write(f"  No Percentage: {no_percentage:.2f}%")
+
+            # Convert DataFrame to CSV for download
+            csv = results_df.to_csv(index=False)
+            st.download_button(
+                label="Download results as CSV",
+                data=csv,
+                file_name='processed_stock_data.csv',
+                mime='text/csv'
+            )
 
 if __name__ == "__main__":
     main()
