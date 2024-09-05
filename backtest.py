@@ -9,13 +9,28 @@ USER_CREDENTIALS = {
     "22": "22"
 }
 
+
 def fetch_stock_data(symbol, start_date, end_date):
     """
     Fetch stock data from Yahoo Finance between start_date and end_date.
     """
-    stock_data = yf.download(symbol, start=start_date, end=end_date)
-    stock_data = stock_data[stock_data.index.dayofweek < 5]  # Ensure only weekdays (Monday to Friday) are considered
+    if pd.isnull(start_date) or pd.isnull(end_date):
+        st.error(f"Invalid date range: Start Date: {start_date}, End Date: {end_date}")
+        return pd.DataFrame()  # Return an empty DataFrame if dates are invalid
+
+    # Ensure dates are in the correct format
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+
+    stock_data = yf.download(symbol, start=start_date_str, end=end_date_str)
+
+    # Ensure the index is a DatetimeIndex
+    stock_data.index = pd.to_datetime(stock_data.index)
+
+    # Filter to only include weekdays (Monday to Friday)
+    stock_data = stock_data[stock_data.index.dayofweek < 5]
     return stock_data
+
 
 def process_data(df):
     all_results = {f'trading_day_{i + 1}': {'Yes': 0, 'No': 0, 'Highs': []} for i in range(10)}
@@ -90,6 +105,7 @@ def process_data(df):
 
     return results_df, all_results, max_trading_day_yes
 
+
 def sidebar_login():
     """
     Sidebar login page for the Streamlit app.
@@ -107,6 +123,7 @@ def sidebar_login():
         else:
             st.sidebar.error("Invalid username or password. Please try again.")
 
+
 def main():
     if 'logged_in' not in st.session_state or not st.session_state.logged_in:
         sidebar_login()
@@ -117,8 +134,13 @@ def main():
         uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
         if uploaded_file is not None:
-            # Read the CSV file
+            # Read the CSV file and ensure date parsing
             df = pd.read_csv(uploaded_file, parse_dates=['date'], dayfirst=True)
+
+            # Check for NaT values in 'date' column
+            if df['date'].isnull().any():
+                st.error("The CSV file contains invalid or missing dates.")
+                return
 
             # Process the data
             results_df, all_results, max_trading_day_yes = process_data(df)
@@ -156,6 +178,7 @@ def main():
                 file_name='processed_stock_data.csv',
                 mime='text/csv'
             )
+
 
 if __name__ == "__main__":
     main()
