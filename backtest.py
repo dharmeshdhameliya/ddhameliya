@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import timedelta
+import os  # To work with file names
 
 # Define valid usernames and passwords
 USER_CREDENTIALS = {
@@ -128,12 +129,15 @@ def main():
     if 'logged_in' not in st.session_state or not st.session_state.logged_in:
         sidebar_login()
     else:
-        st.title("Stock Data Processor")
+        st.title("Dhameliya AI Data Processor")
 
         # Main page content
         uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
         if uploaded_file is not None:
+            # Get the name of the uploaded file (without extension)
+            uploaded_filename = os.path.splitext(uploaded_file.name)[0]
+
             # Read the CSV file and ensure date parsing
             df = pd.read_csv(uploaded_file, parse_dates=['date'], dayfirst=True)
 
@@ -170,12 +174,13 @@ def main():
                 st.write(f"  Yes Percentage: {yes_percentage:.2f}%")
                 st.write(f"  No Percentage: {no_percentage:.2f}%")
 
-            # Convert DataFrame to CSV for download
+            # Convert DataFrame to CSV for download with the same name as the uploaded file
             csv = results_df.to_csv(index=False)
+            export_filename = f"{uploaded_filename}_processed.csv"
             st.download_button(
                 label="Download results as CSV",
                 data=csv,
-                file_name='processed_stock_data.csv',
+                file_name=export_filename,
                 mime='text/csv'
             )
 
