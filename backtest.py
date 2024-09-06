@@ -11,20 +11,13 @@ USER_CREDENTIALS = {
 }
 
 def fetch_stock_data(symbol, start_date, end_date):
-    """
-    Fetch stock data from Yahoo Finance between start_date and end_date.
-    """
     if pd.isnull(start_date) or pd.isnull(end_date):
         st.error(f"Invalid date range: Start Date: {start_date}, End Date: {end_date}")
-        return pd.DataFrame()  # Return an empty DataFrame if dates are invalid
+        return pd.DataFrame()
 
     stock_data = yf.download(symbol, start=start_date, end=end_date)
-
-    # Ensure the index is a DatetimeIndex
     stock_data.index = pd.to_datetime(stock_data.index)
-
-    # Filter to only include weekdays (Monday to Friday)
-    stock_data = stock_data[stock_data.index.dayofweek < 5]
+    stock_data = stock_data[stock_data.index.dayofweek < 5]  # Weekdays only
     return stock_data
 
 def process_data(df):
@@ -37,47 +30,37 @@ def process_data(df):
         date = row['date']
         previous_day = date - timedelta(days=1)
 
-        # Fetch data including previous day and next 15 days to ensure coverage of all trading days
         stock_data = fetch_stock_data(symbol, previous_day - timedelta(days=10), date + timedelta(days=30))
 
         if not stock_data.empty:
             try:
-                # Get the closing price for the specified date
                 closing_price = stock_data.loc[date]['Close']
+                current_day_high = stock_data.loc[date]['High']
 
-                # Find the previous trading day
                 previous_trading_day = stock_data.index[stock_data.index < date].max()
                 previous_close = stock_data.loc[previous_trading_day]['Close'] if previous_trading_day else None
-
-                # Calculate the current day percentage change if the previous day's close exists
                 current_day_pct = ((closing_price - previous_close) / previous_close * 100) if previous_close else None
-
-                # Get the current day volume
                 volume = stock_data.loc[date]['Volume'] if date in stock_data.index else None
 
-                # Initialize results for the current row
                 row_result = {
                     'symbol': symbol,
                     'date': date.strftime('%d-%m-%Y'),
                     'closing_price': closing_price,
                     'volume': volume,
-                    'current_day_%': current_day_pct  # Add the current day percentage change
+                    'current_day_high': current_day_high,
+                    'current_day_%': current_day_pct
                 }
 
-                # Process results for the next 10 trading days (filter trading days only)
                 future_trading_days = stock_data.index[stock_data.index > date][:10]
-
                 for i, trading_day in enumerate(future_trading_days):
                     next_day_high = stock_data.loc[trading_day]['High']
                     result = 'Yes' if closing_price * 1.01 <= next_day_high else 'No'
                     all_results[f'trading_day_{i + 1}'][result] += 1
 
-                    # Add result to the row
                     row_result[f'trading_day_{i + 1}_date'] = trading_day.strftime('%d-%m-%Y')
                     row_result[f'trading_day_{i + 1}_high'] = next_day_high
                     row_result[f'trading_day_{i + 1}_result'] = result
 
-                    # Skip further days if a Yes is achieved
                     if result == 'Yes':
                         break
 
@@ -89,6 +72,7 @@ def process_data(df):
                     'date': date.strftime('%d-%m-%Y'),
                     'closing_price': None,
                     'volume': None,
+                    'current_day_high': None,
                     'current_day_%': None
                 }
                 for i in range(10):
@@ -97,11 +81,8 @@ def process_data(df):
                     row_result[f'trading_day_{i + 1}_result'] = 'None'
                 results.append(row_result)
 
-    # Create DataFrame from results
     results_df = pd.DataFrame(results)
-
-    # Determine the day on which all "No" results turned to "Yes"
-    remaining_no = total_symbols  # Start with all symbols
+    remaining_no = total_symbols
     max_trading_day_yes = None
     for i in range(10):
         trading_day_index = f'trading_day_{i + 1}'
@@ -112,10 +93,12 @@ def process_data(df):
 
     return results_df, all_results, max_trading_day_yes
 
+def highlight_no_rows(row):
+    # Apply a highlight to the row if any of the trading day results are 'No'
+    highlight = ['background-color: yellow'] * len(row) if 'No' in row.values else [''] * len(row)
+    return highlight
+
 def sidebar_login():
-    """
-    Sidebar login page for the Streamlit app.
-    """
     st.sidebar.title("Login")
 
     username = st.sidebar.text_input("Username")
@@ -135,36 +118,26 @@ def main():
     else:
         st.title("Dhameliya AI Data Processor")
 
-        # Main page content
         uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
         if uploaded_file is not None:
-            # Get the name of the uploaded file (without extension)
             uploaded_filename = os.path.splitext(uploaded_file.name)[0]
-
-            # Read the CSV file and ensure date parsing
             df = pd.read_csv(uploaded_file, parse_dates=['date'], dayfirst=True)
 
-            # Check for NaT values in 'date' column
             if df['date'].isnull().any():
                 st.error("The CSV file contains invalid or missing dates.")
                 return
 
-            # Process the data
             results_df, all_results, max_trading_day_yes = process_data(df)
 
-            # Display results
             st.write("Processed Data:")
-            st.dataframe(results_df)
+            st.dataframe(results_df.style.apply(highlight_no_rows, axis=1))
 
-            # Display results and percentages
             if max_trading_day_yes:
                 st.write(f"100% Yes results achieved on Trading Day {max_trading_day_yes}")
             else:
                 st.write("100% Yes results not achieved within 10 trading days")
 
-            # Show Trading Day Results
-            st.write("Trading Day Results:")
             for i in range(10):
                 trading_day_index = f'trading_day_{i + 1}'
                 day_results = all_results[trading_day_index]
@@ -178,7 +151,6 @@ def main():
                 st.write(f"  Yes Percentage: {yes_percentage:.2f}%")
                 st.write(f"  No Percentage: {no_percentage:.2f}%")
 
-            # Convert DataFrame to CSV for download with the same name as the uploaded file
             csv = results_df.to_csv(index=False)
             export_filename = f"{uploaded_filename}_processed.csv"
             st.download_button(
