@@ -10,7 +10,6 @@ USER_CREDENTIALS = {
     "22": "22"
 }
 
-
 def fetch_stock_data(symbol, start_date, end_date):
     """
     Fetch stock data from Yahoo Finance between start_date and end_date.
@@ -19,11 +18,7 @@ def fetch_stock_data(symbol, start_date, end_date):
         st.error(f"Invalid date range: Start Date: {start_date}, End Date: {end_date}")
         return pd.DataFrame()  # Return an empty DataFrame if dates are invalid
 
-    # Ensure dates are in the correct format
-    start_date_str = start_date.strftime('%Y-%m-%d')
-    end_date_str = end_date.strftime('%Y-%m-%d')
-
-    stock_data = yf.download(symbol, start=start_date_str, end=end_date_str)
+    stock_data = yf.download(symbol, start=start_date, end=end_date)
 
     # Ensure the index is a DatetimeIndex
     stock_data.index = pd.to_datetime(stock_data.index)
@@ -31,7 +26,6 @@ def fetch_stock_data(symbol, start_date, end_date):
     # Filter to only include weekdays (Monday to Friday)
     stock_data = stock_data[stock_data.index.dayofweek < 5]
     return stock_data
-
 
 def process_data(df):
     all_results = {f'trading_day_{i + 1}': {'Yes': 0, 'No': 0, 'Highs': []} for i in range(10)}
@@ -41,36 +35,46 @@ def process_data(df):
     for _, row in df.iterrows():
         symbol = row['symbol']
         date = row['date']
-        next_day = date + timedelta(days=1)
+        previous_day = date - timedelta(days=1)
 
-        # Fetch data for the required date range (next 10 business days)
-        stock_data = fetch_stock_data(symbol, date, next_day + timedelta(days=30))
+        # Fetch data including previous day and next 15 days to ensure coverage of all trading days
+        stock_data = fetch_stock_data(symbol, previous_day - timedelta(days=10), date + timedelta(days=30))
 
         if not stock_data.empty:
             try:
-                # Get closing price for the specified date
-                closing_price = stock_data.loc[date.strftime('%Y-%m-%d')]['Close']
+                # Get the closing price for the specified date
+                closing_price = stock_data.loc[date]['Close']
+
+                # Find the previous trading day
+                previous_trading_day = stock_data.index[stock_data.index < date].max()
+                previous_close = stock_data.loc[previous_trading_day]['Close'] if previous_trading_day else None
+
+                # Calculate the current day percentage change if the previous day's close exists
+                current_day_pct = ((closing_price - previous_close) / previous_close * 100) if previous_close else None
+
+                # Get the current day volume
+                volume = stock_data.loc[date]['Volume'] if date in stock_data.index else None
 
                 # Initialize results for the current row
                 row_result = {
                     'symbol': symbol,
                     'date': date.strftime('%d-%m-%Y'),
-                    'closing_price': closing_price
+                    'closing_price': closing_price,
+                    'volume': volume,
+                    'current_day_%': current_day_pct  # Add the current day percentage change
                 }
 
-                # Process results for the next 10 trading days
-                for i in range(10):
-                    try:
-                        trading_day = stock_data.index[i + 1]
-                        next_day_high = stock_data.iloc[i + 1]['High']
-                        result = 'Yes' if closing_price * 1.01 <= next_day_high else 'No'
-                        all_results[f'trading_day_{i + 1}'][result] += 1
-                    except (KeyError, IndexError):
-                        result = 'No'  # If data is missing, consider it as 'No'
+                # Process results for the next 10 trading days (filter trading days only)
+                future_trading_days = stock_data.index[stock_data.index > date][:10]
+
+                for i, trading_day in enumerate(future_trading_days):
+                    next_day_high = stock_data.loc[trading_day]['High']
+                    result = 'Yes' if closing_price * 1.01 <= next_day_high else 'No'
+                    all_results[f'trading_day_{i + 1}'][result] += 1
 
                     # Add result to the row
-                    row_result[f'trading_day_{i + 1}_date'] = trading_day.strftime('%d-%m-%Y') if trading_day else None
-                    row_result[f'trading_day_{i + 1}_high'] = next_day_high if trading_day else None
+                    row_result[f'trading_day_{i + 1}_date'] = trading_day.strftime('%d-%m-%Y')
+                    row_result[f'trading_day_{i + 1}_high'] = next_day_high
                     row_result[f'trading_day_{i + 1}_result'] = result
 
                     # Skip further days if a Yes is achieved
@@ -84,6 +88,8 @@ def process_data(df):
                     'symbol': symbol,
                     'date': date.strftime('%d-%m-%Y'),
                     'closing_price': None,
+                    'volume': None,
+                    'current_day_%': None
                 }
                 for i in range(10):
                     row_result[f'trading_day_{i + 1}_date'] = None
@@ -106,7 +112,6 @@ def process_data(df):
 
     return results_df, all_results, max_trading_day_yes
 
-
 def sidebar_login():
     """
     Sidebar login page for the Streamlit app.
@@ -123,7 +128,6 @@ def sidebar_login():
             st.sidebar.success("Login successful!")
         else:
             st.sidebar.error("Invalid username or password. Please try again.")
-
 
 def main():
     if 'logged_in' not in st.session_state or not st.session_state.logged_in:
@@ -183,7 +187,6 @@ def main():
                 file_name=export_filename,
                 mime='text/csv'
             )
-
 
 if __name__ == "__main__":
     main()
